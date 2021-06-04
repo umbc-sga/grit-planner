@@ -76,15 +76,11 @@ function getOfferingInformation(course) {
     const { name, catalog_number, description } = course.subject;
     const courseName = `${name} ${catalog_number} - ${description}`;
 
-    createElement(courseInformation, "h3", {
-        text: courseName
-    });
+    // create a header showing the course name
+    createElement(courseInformation, "h3", { text: courseName });
 
     // latest semester is listed first in the response body
-    const latestOffering = course.semesters[0];
-    createElement(courseInformation, "p", {
-        innerHTML: `<b>Latest Offering:</b> ${latestOffering}`
-    });
+    createElement(courseInformation, "p", { innerHTML: `<b>Latest Offering:</b> ${course.semesters[0]}` });
 
     // go through each type of semester to show the latest offering
     [ "Fall", "Spring", "Winter", "Summer" ].forEach(semester => {
@@ -116,18 +112,51 @@ function getOfferingInformation(course) {
     // create list header
     createElement(courseInformation, "b", { text: "All Offerings:" });
 
-    /**
-     * the course grade semesters are sorted by id which are numerical and need to be reversed to match
-     * the reverse chronological ordering of the semesters
-     */
-    const grades = course.grades.reverse();
- 
-    const offeringList = createElement(courseInformation, "ul");
-    course.semesters.forEach((semester, i) => {
-        createElement(offeringList, "li", { 
-            text: `${semester} (Taught by: ${instructors[grades[i].instructor_id]})`
+    // deep copy course enrollment and grades
+    const enrollment = JSON.parse(JSON.stringify(course.enrollment)).reverse();
+    const grades = JSON.parse(JSON.stringify(course.grades));
+
+    // this approach could potentially create incorrect groupings?
+    const semesters = {};
+    enrollment
+        .forEach(([ semester, totalStudents ]) => {
+            semesters[semester] = [];
+
+            let numStudents = 0;
+            while (numStudents < totalStudents) {
+                const section = grades.shift();
+
+                // sometimes there are blank arrays in the grades list, idk why
+                if (section && section.length != 0)
+                {
+                    semesters[semester].push(section);
+            
+                    numStudents += section.total_enrolled;
+                }
+            }
         });
-    });
+
+    // create a list showing all semesters and sections offered
+    const semesterList = createElement(courseInformation, "ul");
+
+    // for each semester show the section information
+    Object.entries(semesters)
+        .reverse()
+        .forEach(([ semester, sections ]) => {
+            // create a list item saying what semester this is
+            createElement(semesterList, "li", { text: semester });
+
+            // create a list of the sections for the semester
+            const sectionList = createElement(semesterList, "ul");
+
+            // add to the sub-list each section
+            sections
+                .forEach(x => {
+                    createElement(sectionList, "li", {
+                        text: `${instructors[x.instructor_id]} (${x.total_enrolled} students enrolled)`
+                    });
+                });
+        });
 }
 
 /**
