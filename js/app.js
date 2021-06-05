@@ -17,6 +17,15 @@ const courseSearchInput = document.getElementById("courseSearch");
             getCourseData();
         }
     }
+
+    // listen for changes in the course search input
+    courseSearchInput.oninput = e => {
+        // clear course information if the search input becomes blank (like if they clear the search)
+        if (e.target.value == "")
+        {
+            courseInformation.innerHTML = "";
+        }
+    }
 })();
 
 /**
@@ -28,7 +37,7 @@ function getCourseData() {
 
     fetch(`https://api.gritview.io/course?course=${query}`)
         .then(response => response.json())
-        .then(getOfferingInformation)
+        .then(showCourseInformation)
         .catch(showSearchErrorMessage);
 }
 
@@ -60,7 +69,7 @@ function showSearchErrorMessage() {
  * Get the offerning information about a course (latest offerings, instructors, etc).
  * @param {Object} course 
  */
-function getOfferingInformation(course) {
+function showCourseInformation(course) {
     // if the course query was well-formed, but replied back with no data
     if (!Object.keys(course.subject).length) 
     {
@@ -79,29 +88,93 @@ function getOfferingInformation(course) {
     // create a header showing the course name
     createElement(courseInformation, "h3", { text: courseName });
 
-    // latest semester is listed first in the response body
-    createElement(courseInformation, "p", { innerHTML: `<b>Latest Offering:</b> ${course.semesters[0]}` });
+    // create a card grid for the semester cards
+    const cardContainer = createElement(courseInformation, "div", { 
+        class: "row row-cols-1 row-cols-md-2"
+    });
 
     // go through each type of semester to show the latest offering
-    [ "Fall", "Spring", "Winter", "Summer" ].forEach(semester => {
-        // get the latest semesterly offering
-        const lastSemesterlyOffering = course.semesters.find(x => x.includes(semester));
+    [ "Fall", "Spring", "Winter", "Summer" ]
+        .forEach(semester => {
+            // get the latest semesterly offering
+            const lastSemesterlyOffering = course.semesters.find(x => x.includes(semester));
 
-        // show latest semesterly offering
-        if (lastSemesterlyOffering)
-        {
-            createElement(courseInformation, "p", {
-                innerHTML: `<b>Last ${semester} Offering:</b> ${lastSemesterlyOffering}`
+            // create a card for the semester
+            const card = createElement(cardContainer, "div", { 
+                class: "card"
             });
-        }
-        // state that the course has not been historically offered during that semester
-        else
-        {
-            createElement(courseInformation, "p", {
-                innerHTML: `<b>Last ${semester} Offering:</b> Not since at least 2017`
+
+            // create a card body to hold everything
+            const cardBody = createElement(card, "div", {
+                class: "card-body"
             });
-        }
-    });
+
+            // create a card title that says the semester
+            createElement(cardBody, "h5", {
+                class: "card-title",
+                text: semester
+            });
+
+            // add the date the course was offered during that semester type
+            createElement(cardBody, "p", {
+                class: "mb-0",
+                innerHTML: `<b>Last Offered</b>: ${lastSemesterlyOffering || "N/A"}`
+            });
+
+            let probability = 0.50;
+
+            // if the course was offered last year for that semester
+            if (lastSemesterlyOffering)
+            {
+                const [ type, year ] = lastSemesterlyOffering.split(" ");
+
+                if (new Date().getFullYear() - year <= 1)
+                {
+                    probability += 0.20
+                }
+
+                // TODO this is a recency bias, take account of gaps before last semester (this will help on biannuals)
+            }
+            // if the course was not offered last year for that semester
+            else
+            {
+                probability -= 0.20;
+            }
+
+            // choose the badge text depending on probability levels
+            let text = "";
+            if (probability >= 0.70)
+            {
+                text = "Hightly Likely";
+            }
+            else if (probability > 0.50)
+            {
+                text = "Likely";
+            }
+            else if (probability <= 0.30)
+            {
+                text = "Highly Unlikely";
+            }
+            else
+            {
+                text = "Unlikely";
+            }
+
+            // add the paragraph describing future likelihood
+            const likelihoodP = createElement(cardBody, "p", {
+                class: "fw-bold",
+                text: "Likelihood of Future Offering: "
+            })
+
+            // create a badge to house likelihood text and be colored
+            const likelihoodBagdge = createElement(likelihoodP, "span", {
+                class: "badge",
+                text: text
+            });
+
+            // linear interpolate color between red and green
+            likelihoodBagdge.style.background = lerpColor("#FF0000", "#00FF00", probability);
+        });
 
     // create an instructor lookup table by instructor id
     const instructors = {};
@@ -112,6 +185,60 @@ function getOfferingInformation(course) {
     // create list header
     createElement(courseInformation, "b", { text: "All Offerings:" });
 
+    // get sections by semester
+    const sectionsBySemester = getSectionsBySemester(course);
+
+    // create a list showing all semesters and sections offered
+    const semesterList = createElement(courseInformation, "ul");
+
+    // for each semester show the section information
+    Object.entries(sectionsBySemester)
+        .reverse()
+        .forEach(([ semester, sections ]) => {
+            // create a list item saying what semester this is
+            createElement(semesterList, "li", { text: semester });
+
+            // create a list of the sections for the semester
+            const sectionList = createElement(semesterList, "ul");
+
+            // add to the sub-list each section
+            sections
+                .forEach(x => {
+                    createElement(sectionList, "li", {
+                        text: `${instructors[x.instructor_id]} (${x.total_enrolled} students enrolled)`
+                    });
+                });
+        });
+}
+
+/**
+ * Linearly interpolate a color between two values by a given amount.
+ * 
+ * From: https://gist.github.com/rosszurowski/67f04465c424a9bc0dae
+ * 
+ * @param {String} a 
+ * @param {String} b 
+ * @param {Number} amount 
+ * @returns {String} color
+ */
+function lerpColor(a, b, amount) {
+    let ah = parseInt(a.replace(/#/g, ''), 16),
+        ar = ah >> 16, ag = ah >> 8 & 0xff, ab = ah & 0xff,
+        bh = parseInt(b.replace(/#/g, ''), 16),
+        br = bh >> 16, bg = bh >> 8 & 0xff, bb = bh & 0xff,
+        rr = ar + amount * (br - ar),
+        rg = ag + amount * (bg - ag),
+        rb = ab + amount * (bb - ab);
+
+    return '#' + ((1 << 24) + (rr << 16) + (rg << 8) + rb | 0).toString(16).slice(1);
+}
+
+/**
+ * 
+ * @param {Object} course 
+ * @returns {Object} sectionsBySemester
+ */
+function getSectionsBySemester(course) {
     // deep copy course enrollment and grades
     const enrollment = JSON.parse(JSON.stringify(course.enrollment)).reverse();
     const grades = JSON.parse(JSON.stringify(course.grades));
@@ -136,27 +263,7 @@ function getOfferingInformation(course) {
             }
         });
 
-    // create a list showing all semesters and sections offered
-    const semesterList = createElement(courseInformation, "ul");
-
-    // for each semester show the section information
-    Object.entries(semesters)
-        .reverse()
-        .forEach(([ semester, sections ]) => {
-            // create a list item saying what semester this is
-            createElement(semesterList, "li", { text: semester });
-
-            // create a list of the sections for the semester
-            const sectionList = createElement(semesterList, "ul");
-
-            // add to the sub-list each section
-            sections
-                .forEach(x => {
-                    createElement(sectionList, "li", {
-                        text: `${instructors[x.instructor_id]} (${x.total_enrolled} students enrolled)`
-                    });
-                });
-        });
+    return semesters;
 }
 
 /**
