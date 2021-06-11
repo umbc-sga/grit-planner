@@ -35,7 +35,7 @@ function getCourseData() {
     let query = document.getElementById("courseSearch").value;
     query = query.split(" ").join("");
 
-    fetch(`https://api.gritview.io/course?course=${query}`)
+    fetch(`https://api.sga.umbc.edu/course/${query}`)
         .then(response => response.json())
         .then(showCourseInformation)
         .catch(showSearchErrorMessage);
